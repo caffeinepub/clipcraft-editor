@@ -446,6 +446,28 @@ export function useVideoEditor() {
     [saveSnapshot],
   );
 
+  const updateClipDuration = useCallback(
+    (id: string, duration: number) => {
+      setState((prev) => {
+        const next = {
+          ...prev,
+          clips: prev.clips.map((c) =>
+            c.id === id
+              ? {
+                  ...c,
+                  duration,
+                  endOffset: c.startOffset + duration,
+                }
+              : c,
+          ),
+        };
+        saveSnapshot(next);
+        return next;
+      });
+    },
+    [saveSnapshot],
+  );
+
   const splitClip = useCallback(
     (id: string, atTime: number) => {
       setState((prev) => {
@@ -772,6 +794,7 @@ export function useVideoEditor() {
     updateClipVolume,
     updateClipTransition,
     updateClipKenBurns,
+    updateClipDuration,
     splitClip,
     trimClip,
     addTextOverlay,

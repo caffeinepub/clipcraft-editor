@@ -8,8 +8,25 @@ interface Props {
   editor: VideoEditorHook;
 }
 
+const KEN_BURNS_OPTIONS: {
+  value: "none" | "zoomIn" | "zoomOut" | "panLeft" | "panRight";
+  label: string;
+  icon: string;
+}[] = [
+  { value: "none", label: "None", icon: "✕" },
+  { value: "zoomIn", label: "Zoom In", icon: "🔍" },
+  { value: "zoomOut", label: "Zoom Out", icon: "🔭" },
+  { value: "panLeft", label: "Pan Left", icon: "⬅" },
+  { value: "panRight", label: "Pan Right", icon: "➡" },
+];
+
 export function FilterPanel({ editor }: Props) {
-  const { selectedClip, updateClipFilters } = editor;
+  const {
+    selectedClip,
+    updateClipFilters,
+    updateClipKenBurns,
+    updateClipDuration,
+  } = editor;
 
   if (!selectedClip) {
     return (
@@ -24,6 +41,7 @@ export function FilterPanel({ editor }: Props) {
   }
 
   const { filters } = selectedClip;
+  const isImage = selectedClip.type === "image";
 
   function resetFilters() {
     updateClipFilters(selectedClip!.id, {
@@ -48,6 +66,9 @@ export function FilterPanel({ editor }: Props) {
     `saturate(${100 + filters.temperature}%)`,
     `brightness(${100 + filters.highlights * 0.3}%)`,
   ].join(" ");
+
+  const currentKenBurns = selectedClip.kenBurns ?? "none";
+  const currentDuration = selectedClip.duration;
 
   return (
     <div className="flex flex-col gap-4 h-full overflow-y-auto">
@@ -81,6 +102,64 @@ export function FilterPanel({ editor }: Props) {
           <div className="w-full h-full bg-gradient-to-br from-amber-600 to-orange-800" />
         )}
       </div>
+
+      {/* Ken Burns Effect — image clips only */}
+      {isImage && (
+        <div className="space-y-2">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest border-t border-white/10 pt-3">
+            Image Motion
+          </p>
+          <div className="grid grid-cols-5 gap-1">
+            {KEN_BURNS_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => updateClipKenBurns(selectedClip.id, opt.value)}
+                className={`flex flex-col items-center gap-1 py-2 px-1 rounded-lg text-xs font-medium transition-colors ${
+                  currentKenBurns === opt.value
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-secondary hover:bg-secondary/80 text-secondary-foreground"
+                }`}
+                data-ocid={`filters.ken_burns_${opt.value}_button`}
+              >
+                <span className="text-base">{opt.icon}</span>
+                <span
+                  className="leading-tight text-center"
+                  style={{ fontSize: "9px" }}
+                >
+                  {opt.label}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Duration — image clips only */}
+      {isImage && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
+              Duration
+            </Label>
+            <span className="text-xs font-mono text-primary">
+              {currentDuration}s
+            </span>
+          </div>
+          <Slider
+            value={[currentDuration]}
+            min={1}
+            max={15}
+            step={0.5}
+            onValueChange={(v) => updateClipDuration(selectedClip.id, v[0])}
+            data-ocid="filters.duration_slider"
+          />
+          <div className="flex justify-between text-xs text-muted-foreground">
+            <span>1s</span>
+            <span>15s</span>
+          </div>
+        </div>
+      )}
 
       {/* Basic Adjustments */}
       <div className="space-y-4">
