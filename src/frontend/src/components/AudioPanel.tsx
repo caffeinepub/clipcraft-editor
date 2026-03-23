@@ -3,7 +3,7 @@ import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import type { VideoEditorHook } from "@/hooks/useVideoEditor";
 import { Music, Trash2, Upload, Volume1, Volume2, VolumeX } from "lucide-react";
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 
 interface Props {
   editor: VideoEditorHook;
@@ -12,6 +12,17 @@ interface Props {
 export function AudioPanel({ editor }: Props) {
   const { state, setAudioTrack, updateAudioVolume, removeAudioTrack } = editor;
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Auto-open file picker on mount when no track exists
+  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only, intentional
+  useEffect(() => {
+    if (!state.audioTrack) {
+      const t = setTimeout(() => {
+        fileInputRef.current?.click();
+      }, 100);
+      return () => clearTimeout(t);
+    }
+  }, []);
 
   function handleFile(files: FileList | null) {
     if (!files || files.length === 0) return;
@@ -29,25 +40,15 @@ export function AudioPanel({ editor }: Props) {
   return (
     <div className="flex flex-col gap-4 h-full overflow-y-auto">
       {!track ? (
-        <button
-          type="button"
-          className="border-2 border-dashed border-white/15 rounded-xl p-5 flex flex-col items-center gap-2 cursor-pointer hover:border-primary/60 hover:bg-primary/5 transition-all w-full text-left"
-          onClick={() => fileInputRef.current?.click()}
-          data-ocid="audio.dropzone"
+        <div
+          className="flex flex-col items-center gap-2 py-4 text-muted-foreground"
+          data-ocid="audio.empty_state"
         >
-          <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-            <Music className="w-5 h-5 text-primary" />
-          </div>
-          <div className="text-center">
-            <p className="text-sm font-medium">Add Background Music</p>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              MP3, WAV, AAC supported
-            </p>
-          </div>
-          <span className="mt-1 inline-flex items-center gap-1 px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-sm font-medium">
-            <Upload className="w-3 h-3" /> Choose Audio
-          </span>
-        </button>
+          <Music className="w-7 h-7 opacity-25" />
+          <p className="text-xs text-center text-muted-foreground/60">
+            No music added yet
+          </p>
+        </div>
       ) : (
         <div className="p-3 rounded-xl bg-card border border-white/10 space-y-3">
           <div className="flex items-center gap-3">

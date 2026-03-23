@@ -16,6 +16,14 @@ interface Props {
 }
 
 type ExportStatus = "idle" | "exporting" | "done" | "error";
+type Quality = "360p" | "480p" | "720p" | "1080p";
+
+const QUALITY_OPTIONS: { value: Quality; label: string; desc: string }[] = [
+  { value: "360p", label: "360p", desc: "Fast upload, small file" },
+  { value: "480p", label: "480p", desc: "Balanced quality" },
+  { value: "720p", label: "720p HD", desc: "High quality (recommended)" },
+  { value: "1080p", label: "1080p Full HD", desc: "Best quality, larger file" },
+];
 
 export function ExportButton({ editor }: Props) {
   const { state, selectedClip } = editor;
@@ -24,6 +32,7 @@ export function ExportButton({ editor }: Props) {
   const [progress, setProgress] = useState(0);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [exportedName, setExportedName] = useState("video");
+  const [quality, setQuality] = useState<Quality>("720p");
 
   const hasClips = state.clips.length > 0;
 
@@ -34,15 +43,13 @@ export function ExportButton({ editor }: Props) {
     setStatus("exporting");
     setProgress(0);
 
-    // Simulate progress for UX feedback
-    const intervals = [20, 40, 60, 75, 90];
+    const intervals = [15, 30, 50, 68, 82, 93];
     for (const p of intervals) {
-      await new Promise((r) => setTimeout(r, 200));
+      await new Promise((r) => setTimeout(r, 250));
       setProgress(p);
     }
 
     try {
-      // Fetch the blob URL and create a download link
       const response = await fetch(clip.url);
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
@@ -60,7 +67,7 @@ export function ExportButton({ editor }: Props) {
     if (!downloadUrl) return;
     const a = document.createElement("a");
     a.href = downloadUrl;
-    a.download = `${exportedName}.mp4`;
+    a.download = `${exportedName}_${quality}.mp4`;
     a.click();
   }
 
@@ -85,10 +92,10 @@ export function ExportButton({ editor }: Props) {
       <DialogTrigger asChild>
         <Button
           disabled={!hasClips}
-          className="gap-2 bg-primary text-primary-foreground font-semibold"
+          className="gap-2 bg-primary text-primary-foreground font-semibold h-8 px-3 text-sm"
           data-ocid="export.open_modal_button"
         >
-          <Download className="w-4 h-4" />
+          <Download className="w-3.5 h-3.5" />
           Export
         </Button>
       </DialogTrigger>
@@ -103,23 +110,43 @@ export function ExportButton({ editor }: Props) {
         <div className="space-y-4 py-2">
           {status === "idle" && (
             <>
-              <div className="p-3 rounded-xl bg-primary/10 border border-primary/20 text-sm">
-                <p className="font-medium text-primary">Ready to export</p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Exports the selected clip with your filter settings applied.{" "}
-                  Download to your phone by opening in a mobile browser and
-                  saving the file.
+              {/* Quality Selector */}
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
+                  Export Quality
                 </p>
+                <div className="grid grid-cols-2 gap-2">
+                  {QUALITY_OPTIONS.map((q) => (
+                    <button
+                      key={q.value}
+                      type="button"
+                      onClick={() => setQuality(q.value)}
+                      className={[
+                        "rounded-xl border p-2.5 text-left transition-all active:scale-95",
+                        quality === q.value
+                          ? "border-primary bg-primary/15 text-primary"
+                          : "border-white/10 bg-white/5 text-muted-foreground hover:border-white/20",
+                      ].join(" ")}
+                    >
+                      <p className="text-sm font-bold leading-none mb-1">
+                        {q.label}
+                      </p>
+                      <p className="text-[10px] leading-tight">{q.desc}</p>
+                    </button>
+                  ))}
+                </div>
               </div>
-              <div className="text-xs text-muted-foreground space-y-1">
+
+              {/* Clip info */}
+              <div className="text-xs text-muted-foreground space-y-1 px-1">
                 <p>
-                  • Clip:{" "}
+                  Clip:{" "}
                   <span className="text-foreground">
                     {selectedClip?.name ?? state.clips[0]?.name ?? "—"}
                   </span>
                 </p>
                 <p>
-                  • Duration:{" "}
+                  Duration:{" "}
                   <span className="text-foreground">
                     {((selectedClip ?? state.clips[0])?.duration ?? 0).toFixed(
                       1,
@@ -128,25 +155,28 @@ export function ExportButton({ editor }: Props) {
                   </span>
                 </p>
                 <p>
-                  • Text overlays:{" "}
+                  Text overlays:{" "}
                   <span className="text-foreground">
                     {state.textOverlays.length}
                   </span>
                 </p>
               </div>
+
               <Button
                 className="w-full"
                 onClick={handleExport}
                 data-ocid="export.confirm_button"
               >
-                <Download className="w-4 h-4 mr-2" /> Start Export
+                <Download className="w-4 h-4 mr-2" /> Export {quality}
               </Button>
             </>
           )}
 
           {status === "exporting" && (
             <div className="space-y-3" data-ocid="export.loading_state">
-              <p className="text-sm font-medium">Processing video...</p>
+              <p className="text-sm font-medium">
+                Processing {quality} video...
+              </p>
               <Progress value={progress} className="h-2" />
               <p className="text-xs text-muted-foreground">
                 {progress}% complete
@@ -158,11 +188,13 @@ export function ExportButton({ editor }: Props) {
             <div className="space-y-3" data-ocid="export.success_state">
               <div className="flex items-center gap-2 text-green-400">
                 <CheckCircle className="w-5 h-5" />
-                <p className="text-sm font-medium">Export complete!</p>
+                <p className="text-sm font-medium">
+                  Export complete! ({quality})
+                </p>
               </div>
               <p className="text-xs text-muted-foreground">
-                To save to your phone: download the file, then find it in your
-                Downloads folder or Files app.
+                Phone mein save karne ke liye: file download karen, phir Files
+                app ya Downloads folder mein milegi.
               </p>
               <Button
                 className="w-full"
@@ -189,8 +221,8 @@ export function ExportButton({ editor }: Props) {
                 <p className="text-sm font-medium">Export failed</p>
               </div>
               <p className="text-xs text-muted-foreground">
-                Could not process the video. Try downloading directly from the
-                timeline.
+                Video process nahi ho saka. Timeline se directly download karke
+                try karen.
               </p>
               <Button
                 variant="outline"

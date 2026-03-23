@@ -1,33 +1,62 @@
 import { AudioPanel } from "@/components/AudioPanel";
 import { ClipToolbar } from "@/components/ClipToolbar";
+import { CropPanel } from "@/components/CropPanel";
 import { ExportButton } from "@/components/ExportButton";
 import { FilterPanel } from "@/components/FilterPanel";
 import { MediaLibrary } from "@/components/MediaLibrary";
 import { OnboardingHome } from "@/components/OnboardingHome";
 import { type RatioOption, RatioSelector } from "@/components/RatioSelector";
 import { StickerPanel } from "@/components/StickerPanel";
+import { TemplatesPanel } from "@/components/TemplatesPanel";
 import { TextEditor } from "@/components/TextEditor";
 import { Timeline } from "@/components/Timeline";
+import { TransitionPanel } from "@/components/TransitionPanel";
 import { VideoPreview } from "@/components/VideoPreview";
 import { VoiceoverPanel } from "@/components/VoiceoverPanel";
+import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
 import { useVideoEditor } from "@/hooks/useVideoEditor";
-import { Film, Mic, Music, Sliders, Smile, Type, Upload } from "lucide-react";
+import {
+  ArrowLeftRight,
+  Crop as CropIcon,
+  Film,
+  LayoutTemplate,
+  Mic,
+  Music,
+  Redo2,
+  Sliders,
+  Smile,
+  Type,
+  Undo2,
+  Upload,
+} from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
 
 const YEAR = new Date().getFullYear();
 
 type Step = "home" | "ratio" | "editor";
-type TabId = "media" | "text" | "filters" | "audio" | "voice" | "stickers";
+type TabId =
+  | "media"
+  | "text"
+  | "filters"
+  | "crop"
+  | "audio"
+  | "voice"
+  | "stickers"
+  | "transitions"
+  | "templates";
 
 const TABS: { id: TabId; label: string; Icon: React.ElementType }[] = [
   { id: "media", label: "Media", Icon: Upload },
   { id: "text", label: "Text", Icon: Type },
   { id: "filters", label: "Filters", Icon: Sliders },
+  { id: "crop", label: "Crop", Icon: CropIcon },
   { id: "audio", label: "Audio", Icon: Music },
   { id: "voice", label: "Voice", Icon: Mic },
   { id: "stickers", label: "Stickers", Icon: Smile },
+  { id: "transitions", label: "Trans", Icon: ArrowLeftRight },
+  { id: "templates", label: "Template", Icon: LayoutTemplate },
 ];
 
 export default function App() {
@@ -82,7 +111,7 @@ export default function App() {
                   <Film className="w-4 h-4 text-primary-foreground" />
                 </div>
                 <span className="font-display font-bold text-base tracking-tight">
-                  ClipCraft
+                  VibeEdit
                 </span>
                 {selectedRatio && (
                   <span className="text-[10px] text-muted-foreground border border-white/10 px-1.5 py-0.5 rounded-full">
@@ -90,7 +119,32 @@ export default function App() {
                   </span>
                 )}
               </div>
-              <ExportButton editor={editor} />
+              <div className="flex items-center gap-1">
+                {/* Undo / Redo */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-muted-foreground hover:text-foreground disabled:opacity-25"
+                  disabled={!editor.canUndo}
+                  onClick={editor.undo}
+                  data-ocid="header.undo_button"
+                  title="Undo"
+                >
+                  <Undo2 className="w-4 h-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-muted-foreground hover:text-foreground disabled:opacity-25"
+                  disabled={!editor.canRedo}
+                  onClick={editor.redo}
+                  data-ocid="header.redo_button"
+                  title="Redo"
+                >
+                  <Redo2 className="w-4 h-4" />
+                </Button>
+                <ExportButton editor={editor} />
+              </div>
             </header>
 
             {/* ── Video Preview ── ~40% of screen */}
@@ -158,6 +212,7 @@ export default function App() {
                         {activeTab === "filters" && (
                           <FilterPanel editor={editor} />
                         )}
+                        {activeTab === "crop" && <CropPanel editor={editor} />}
                         {activeTab === "audio" && (
                           <AudioPanel editor={editor} />
                         )}
@@ -166,6 +221,12 @@ export default function App() {
                         )}
                         {activeTab === "stickers" && (
                           <StickerPanel editor={editor} />
+                        )}
+                        {activeTab === "transitions" && (
+                          <TransitionPanel editor={editor} />
+                        )}
+                        {activeTab === "templates" && (
+                          <TemplatesPanel editor={editor} />
                         )}
                       </motion.div>
                     </AnimatePresence>
@@ -189,12 +250,15 @@ export default function App() {
               </p>
             </div>
 
-            {/* ── Bottom Tab Bar ── */}
+            {/* ── Bottom Tab Bar — horizontally scrollable for 9 tabs ── */}
             <nav
               className="flex-shrink-0 border-t border-white/10 bg-card/95 backdrop-blur-md safe-area-bottom"
               style={{ minHeight: "56px" }}
             >
-              <div className="grid grid-cols-6 h-full">
+              <div
+                className="flex overflow-x-auto h-full"
+                style={{ scrollbarWidth: "none" }}
+              >
                 {TABS.map(({ id, label, Icon }) => {
                   const isActive = activeTab === id && panelOpen;
                   return (
@@ -204,7 +268,7 @@ export default function App() {
                       data-ocid={`nav.${id}.tab`}
                       onClick={() => handleTabPress(id)}
                       className={[
-                        "flex flex-col items-center justify-center gap-0.5 py-2 transition-all duration-150 min-h-[56px] active:scale-95",
+                        "flex flex-col items-center justify-center gap-0.5 py-2 transition-all duration-150 min-h-[56px] min-w-[56px] flex-shrink-0 active:scale-95 relative",
                         isActive
                           ? "text-primary"
                           : "text-muted-foreground hover:text-foreground/80",

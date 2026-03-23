@@ -31,8 +31,23 @@ export function FilterPanel({ editor }: Props) {
       contrast: 100,
       saturation: 100,
       blur: 0,
+      hue: 0,
+      temperature: 0,
+      highlights: 0,
+      shadows: 0,
     });
   }
+
+  const previewFilter = [
+    `brightness(${filters.brightness}%)`,
+    `contrast(${filters.contrast}%)`,
+    `saturate(${filters.saturation}%)`,
+    `blur(${filters.blur}px)`,
+    `hue-rotate(${filters.hue}deg)`,
+    `sepia(${Math.abs(filters.temperature) * 0.3}%)`,
+    `saturate(${100 + filters.temperature}%)`,
+    `brightness(${100 + filters.highlights * 0.3}%)`,
+  ].join(" ");
 
   return (
     <div className="flex flex-col gap-4 h-full overflow-y-auto">
@@ -54,9 +69,7 @@ export function FilterPanel({ editor }: Props) {
       {/* Preview pill */}
       <div
         className="h-16 rounded-xl overflow-hidden bg-zinc-800 flex items-center justify-center"
-        style={{
-          filter: `brightness(${filters.brightness}%) contrast(${filters.contrast}%) saturate(${filters.saturation}%) blur(${filters.blur}px)`,
-        }}
+        style={{ filter: previewFilter }}
       >
         {selectedClip.thumbnailUrl ? (
           <img
@@ -69,7 +82,7 @@ export function FilterPanel({ editor }: Props) {
         )}
       </div>
 
-      {/* Sliders */}
+      {/* Basic Adjustments */}
       <div className="space-y-4">
         {[
           {
@@ -119,6 +132,67 @@ export function FilterPanel({ editor }: Props) {
               min={min}
               max={max}
               step={step ?? 1}
+              onValueChange={(v) =>
+                updateClipFilters(selectedClip.id, { [key]: v[0] })
+              }
+              data-ocid={`filters.${key}_slider`}
+            />
+          </div>
+        ))}
+      </div>
+
+      {/* Color Grading */}
+      <div className="space-y-3">
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest border-t border-white/10 pt-3">
+          Color Grading
+        </p>
+        {[
+          {
+            key: "hue" as const,
+            label: "Hue",
+            min: -180,
+            max: 180,
+            value: filters.hue,
+            unit: "°",
+          },
+          {
+            key: "temperature" as const,
+            label: "Temperature",
+            min: -100,
+            max: 100,
+            value: filters.temperature,
+            unit: "",
+          },
+          {
+            key: "highlights" as const,
+            label: "Highlights",
+            min: -100,
+            max: 100,
+            value: filters.highlights,
+            unit: "",
+          },
+          {
+            key: "shadows" as const,
+            label: "Shadows",
+            min: -100,
+            max: 100,
+            value: filters.shadows,
+            unit: "",
+          },
+        ].map(({ key, label, min, max, value, unit }) => (
+          <div key={key} className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs text-muted-foreground">{label}</Label>
+              <span className="text-xs font-mono text-primary">
+                {value > 0 ? `+${value}` : value}
+                {unit}
+              </span>
+            </div>
+            <Slider
+              value={[value]}
+              min={min}
+              max={max}
+              step={1}
               onValueChange={(v) =>
                 updateClipFilters(selectedClip.id, { [key]: v[0] })
               }

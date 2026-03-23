@@ -6,16 +6,37 @@ export interface Clip {
   url: string;
   file: File;
   duration: number;
+  startOffset: number;
+  endOffset: number;
   thumbnailUrl?: string;
   muted: boolean;
   speed: number;
   volume: number;
+  type: "video" | "image";
+  transition:
+    | "none"
+    | "fade"
+    | "slideLeft"
+    | "slideRight"
+    | "zoomIn"
+    | "dissolve";
   filters: {
     brightness: number;
     contrast: number;
     saturation: number;
     blur: number;
+    hue: number;
+    temperature: number;
+    highlights: number;
+    shadows: number;
   };
+  crop: {
+    top: number;
+    left: number;
+    right: number;
+    bottom: number;
+  };
+  kenBurns?: "zoomIn" | "zoomOut" | "panLeft" | "panRight" | "none";
 }
 
 export interface TextOverlay {
@@ -25,6 +46,19 @@ export interface TextOverlay {
   color: string;
   x: number;
   y: number;
+  fontWeight: "normal" | "bold";
+  fontStyle: "normal" | "italic";
+  shadow: boolean;
+  background: boolean;
+  outline: boolean;
+  animation:
+    | "none"
+    | "fadeIn"
+    | "slideUp"
+    | "slideDown"
+    | "bounce"
+    | "zoomIn"
+    | "typewriter";
 }
 
 export interface StickerOverlay {
@@ -63,6 +97,10 @@ export interface EditorState {
   voiceovers: VoiceoverTrack[];
   isRecording: boolean;
 }
+
+type ContentState = Omit<EditorState, "isPlaying" | "currentTime">;
+
+const MAX_HISTORY = 50;
 
 function generateId() {
   return Math.random().toString(36).slice(2, 10);
@@ -108,6 +146,31 @@ function generateThumbnail(file: File): Promise<string> {
   });
 }
 
+const KEN_BURNS_OPTIONS: Clip["kenBurns"][] = [
+  "zoomIn",
+  "zoomOut",
+  "panLeft",
+  "panRight",
+];
+
+const DEFAULT_FILTERS: Clip["filters"] = {
+  brightness: 100,
+  contrast: 100,
+  saturation: 100,
+  blur: 0,
+  hue: 0,
+  temperature: 0,
+  highlights: 0,
+  shadows: 0,
+};
+
+const DEFAULT_CROP: Clip["crop"] = { top: 0, left: 0, right: 0, bottom: 0 };
+
+function extractContentState(s: EditorState): ContentState {
+  const { isPlaying: _p, currentTime: _t, ...content } = s;
+  return content;
+}
+
 export function useVideoEditor() {
   const [state, setState] = useState<EditorState>({
     clips: [],
@@ -121,94 +184,334 @@ export function useVideoEditor() {
     isRecording: false,
   });
 
+  // History stored in refs to avoid re-renders
+  const historyRef = useRef<ContentState[]>([]);
+  const historyIndexRef = useRef<number>(-1);
+  const [historyVersion, setHistoryVersion] = useState(0);
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingChunksRef = useRef<Blob[]>([]);
   const recordingStartRef = useRef<number>(0);
 
-  const addClips = useCallback(async (files: FileList | File[]) => {
-    const fileArray = Array.from(files);
-    const newClips = await Promise.all(
-      fileArray.map(async (file) => {
-        const url = URL.createObjectURL(file);
-        const [duration, thumbnailUrl] = await Promise.all([
-          getVideoDuration(file),
-          generateThumbnail(file),
-        ]);
-        return {
-          id: generateId(),
-          name: file.name.replace(/\.[^.]+$/, ""),
-          url,
-          file,
-          duration,
-          thumbnailUrl,
-          muted: false,
-          speed: 1,
-          volume: 100,
-          filters: { brightness: 100, contrast: 100, saturation: 100, blur: 0 },
-        } satisfies Clip;
-      }),
-    );
-    setState((prev) => ({
-      ...prev,
-      clips: [...prev.clips, ...newClips],
-      selectedClipId: prev.selectedClipId ?? newClips[0]?.id ?? null,
-    }));
+  // Save a content snapshot to history
+  const saveSnapshot = useCallback((newState: EditorState) => {
+    const snap = extractContentState(newState);
+    const idx = historyIndexRef.current;
+    // Discard redo entries beyond current index
+    historyRef.current = historyRef.current.slice(0, idx + 1);
+    historyRef.current.push(snap);
+    // Keep max history
+    if (historyRef.current.length > MAX_HISTORY) {
+      historyRef.current = historyRef.current.slice(
+        historyRef.current.length - MAX_HISTORY,
+      );
+    }
+    historyIndexRef.current = historyRef.current.length - 1;
+    setHistoryVersion((v) => v + 1);
   }, []);
+
+  const undo = useCallback(() => {
+    const idx = historyIndexRef.current;
+    if (idx <= 0) return;
+    historyIndexRef.current = idx - 1;
+    const snap = historyRef.current[historyIndexRef.current];
+    setState((prev) => ({ ...prev, ...snap }));
+    setHistoryVersion((v) => v + 1);
+  }, []);
+
+  const redo = useCallback(() => {
+    const idx = historyIndexRef.current;
+    if (idx >= historyRef.current.length - 1) return;
+    historyIndexRef.current = idx + 1;
+    const snap = historyRef.current[historyIndexRef.current];
+    setState((prev) => ({ ...prev, ...snap }));
+    setHistoryVersion((v) => v + 1);
+  }, []);
+
+  // historyVersion in deps ensures canUndo/canRedo recompute
+  const canUndo = historyVersion >= 0 && historyIndexRef.current > 0;
+  const canRedo =
+    historyVersion >= 0 &&
+    historyIndexRef.current < historyRef.current.length - 1;
+
+  const addClips = useCallback(
+    async (files: FileList | File[]) => {
+      const fileArray = Array.from(files);
+      let kenBurnsIndex = 0;
+      const newClips = await Promise.all(
+        fileArray.map(async (file) => {
+          const isImage = file.type.startsWith("image/");
+          const url = URL.createObjectURL(file);
+
+          if (isImage) {
+            const kb =
+              KEN_BURNS_OPTIONS[kenBurnsIndex % KEN_BURNS_OPTIONS.length];
+            kenBurnsIndex++;
+            return {
+              id: generateId(),
+              name: file.name.replace(/\.[^.]+$/, ""),
+              url,
+              file,
+              duration: 5,
+              startOffset: 0,
+              endOffset: 5,
+              thumbnailUrl: url,
+              muted: true,
+              speed: 1,
+              volume: 100,
+              type: "image" as const,
+              transition: "none" as const,
+              filters: { ...DEFAULT_FILTERS },
+              crop: { ...DEFAULT_CROP },
+              kenBurns: kb,
+            } satisfies Clip;
+          }
+
+          const [duration, thumbnailUrl] = await Promise.all([
+            getVideoDuration(file),
+            generateThumbnail(file),
+          ]);
+          return {
+            id: generateId(),
+            name: file.name.replace(/\.[^.]+$/, ""),
+            url,
+            file,
+            duration,
+            startOffset: 0,
+            endOffset: duration,
+            thumbnailUrl,
+            muted: false,
+            speed: 1,
+            volume: 100,
+            type: "video" as const,
+            transition: "none" as const,
+            filters: { ...DEFAULT_FILTERS },
+            crop: { ...DEFAULT_CROP },
+          } satisfies Clip;
+        }),
+      );
+      setState((prev) => {
+        const next = {
+          ...prev,
+          clips: [...prev.clips, ...newClips],
+          selectedClipId: prev.selectedClipId ?? newClips[0]?.id ?? null,
+        };
+        saveSnapshot(next);
+        return next;
+      });
+    },
+    [saveSnapshot],
+  );
 
   const selectClip = useCallback((id: string) => {
     setState((prev) => ({ ...prev, selectedClipId: id }));
   }, []);
 
-  const removeClip = useCallback((id: string) => {
+  const removeClip = useCallback(
+    (id: string) => {
+      setState((prev) => {
+        const clip = prev.clips.find((c) => c.id === id);
+        if (clip) URL.revokeObjectURL(clip.url);
+        const clips = prev.clips.filter((c) => c.id !== id);
+        const next = {
+          ...prev,
+          clips,
+          selectedClipId:
+            prev.selectedClipId === id
+              ? (clips[0]?.id ?? null)
+              : prev.selectedClipId,
+        };
+        saveSnapshot(next);
+        return next;
+      });
+    },
+    [saveSnapshot],
+  );
+
+  const advanceToNextClip = useCallback(() => {
     setState((prev) => {
-      const clip = prev.clips.find((c) => c.id === id);
-      if (clip) URL.revokeObjectURL(clip.url);
-      const clips = prev.clips.filter((c) => c.id !== id);
-      return {
-        ...prev,
-        clips,
-        selectedClipId:
-          prev.selectedClipId === id
-            ? (clips[0]?.id ?? null)
-            : prev.selectedClipId,
-      };
+      const idx = prev.clips.findIndex((c) => c.id === prev.selectedClipId);
+      if (idx === -1 || idx >= prev.clips.length - 1) {
+        // No next clip - stop playback
+        return { ...prev, isPlaying: false, currentTime: 0 };
+      }
+      const nextClip = prev.clips[idx + 1];
+      return { ...prev, selectedClipId: nextClip.id, currentTime: 0 };
     });
   }, []);
 
   const updateClipFilters = useCallback(
     (id: string, filters: Partial<Clip["filters"]>) => {
-      setState((prev) => ({
-        ...prev,
-        clips: prev.clips.map((c) =>
-          c.id === id ? { ...c, filters: { ...c.filters, ...filters } } : c,
-        ),
-      }));
+      setState((prev) => {
+        const next = {
+          ...prev,
+          clips: prev.clips.map((c) =>
+            c.id === id ? { ...c, filters: { ...c.filters, ...filters } } : c,
+          ),
+        };
+        saveSnapshot(next);
+        return next;
+      });
     },
-    [],
+    [saveSnapshot],
   );
 
-  const updateClipMuted = useCallback((id: string, muted: boolean) => {
-    setState((prev) => ({
-      ...prev,
-      clips: prev.clips.map((c) => (c.id === id ? { ...c, muted } : c)),
-    }));
-  }, []);
+  const updateClipCrop = useCallback(
+    (id: string, crop: Partial<Clip["crop"]>) => {
+      setState((prev) => {
+        const next = {
+          ...prev,
+          clips: prev.clips.map((c) =>
+            c.id === id ? { ...c, crop: { ...c.crop, ...crop } } : c,
+          ),
+        };
+        saveSnapshot(next);
+        return next;
+      });
+    },
+    [saveSnapshot],
+  );
 
-  const updateClipSpeed = useCallback((id: string, speed: number) => {
-    setState((prev) => ({
-      ...prev,
-      clips: prev.clips.map((c) => (c.id === id ? { ...c, speed } : c)),
-    }));
-  }, []);
+  const updateClipMuted = useCallback(
+    (id: string, muted: boolean) => {
+      setState((prev) => {
+        const next = {
+          ...prev,
+          clips: prev.clips.map((c) => (c.id === id ? { ...c, muted } : c)),
+        };
+        saveSnapshot(next);
+        return next;
+      });
+    },
+    [saveSnapshot],
+  );
 
-  const updateClipVolume = useCallback((id: string, volume: number) => {
-    setState((prev) => ({
-      ...prev,
-      clips: prev.clips.map((c) => (c.id === id ? { ...c, volume } : c)),
-    }));
-  }, []);
+  const updateClipSpeed = useCallback(
+    (id: string, speed: number) => {
+      setState((prev) => {
+        const next = {
+          ...prev,
+          clips: prev.clips.map((c) => (c.id === id ? { ...c, speed } : c)),
+        };
+        saveSnapshot(next);
+        return next;
+      });
+    },
+    [saveSnapshot],
+  );
+
+  const updateClipVolume = useCallback(
+    (id: string, volume: number) => {
+      setState((prev) => {
+        const next = {
+          ...prev,
+          clips: prev.clips.map((c) => (c.id === id ? { ...c, volume } : c)),
+        };
+        saveSnapshot(next);
+        return next;
+      });
+    },
+    [saveSnapshot],
+  );
+
+  const updateClipTransition = useCallback(
+    (id: string, transition: Clip["transition"]) => {
+      setState((prev) => {
+        const next = {
+          ...prev,
+          clips: prev.clips.map((c) =>
+            c.id === id ? { ...c, transition } : c,
+          ),
+        };
+        saveSnapshot(next);
+        return next;
+      });
+    },
+    [saveSnapshot],
+  );
+
+  const updateClipKenBurns = useCallback(
+    (id: string, kenBurns: Clip["kenBurns"]) => {
+      setState((prev) => {
+        const next = {
+          ...prev,
+          clips: prev.clips.map((c) => (c.id === id ? { ...c, kenBurns } : c)),
+        };
+        saveSnapshot(next);
+        return next;
+      });
+    },
+    [saveSnapshot],
+  );
+
+  const splitClip = useCallback(
+    (id: string, atTime: number) => {
+      setState((prev) => {
+        const idx = prev.clips.findIndex((c) => c.id === id);
+        if (idx === -1) return prev;
+        const clip = prev.clips[idx];
+        const clampedAt = Math.max(0.1, Math.min(atTime, clip.duration - 0.1));
+
+        const clip1: Clip = {
+          ...clip,
+          id: generateId(),
+          name: `${clip.name} (1)`,
+          url: URL.createObjectURL(clip.file),
+          startOffset: clip.startOffset,
+          endOffset: clip.startOffset + clampedAt,
+          duration: clampedAt,
+        };
+        const clip2: Clip = {
+          ...clip,
+          id: generateId(),
+          name: `${clip.name} (2)`,
+          url: URL.createObjectURL(clip.file),
+          startOffset: clip.startOffset + clampedAt,
+          endOffset: clip.endOffset,
+          duration: clip.duration - clampedAt,
+        };
+
+        URL.revokeObjectURL(clip.url);
+
+        const clips = [
+          ...prev.clips.slice(0, idx),
+          clip1,
+          clip2,
+          ...prev.clips.slice(idx + 1),
+        ];
+
+        const next = { ...prev, clips, selectedClipId: clip1.id };
+        saveSnapshot(next);
+        return next;
+      });
+    },
+    [saveSnapshot],
+  );
+
+  const trimClip = useCallback(
+    (id: string, startOffset: number, endOffset: number) => {
+      setState((prev) => {
+        const next = {
+          ...prev,
+          clips: prev.clips.map((c) =>
+            c.id === id
+              ? {
+                  ...c,
+                  startOffset,
+                  endOffset,
+                  duration: endOffset - startOffset,
+                }
+              : c,
+          ),
+        };
+        saveSnapshot(next);
+        return next;
+      });
+    },
+    [saveSnapshot],
+  );
 
   const addTextOverlay = useCallback(() => {
     const overlay: TextOverlay = {
@@ -218,65 +521,104 @@ export function useVideoEditor() {
       color: "#ffffff",
       x: 50,
       y: 80,
+      fontWeight: "normal",
+      fontStyle: "normal",
+      shadow: false,
+      background: false,
+      outline: false,
+      animation: "none",
     };
-    setState((prev) => ({
-      ...prev,
-      textOverlays: [...prev.textOverlays, overlay],
-    }));
-  }, []);
+    setState((prev) => {
+      const next = {
+        ...prev,
+        textOverlays: [...prev.textOverlays, overlay],
+      };
+      saveSnapshot(next);
+      return next;
+    });
+  }, [saveSnapshot]);
 
   const updateTextOverlay = useCallback(
     (id: string, updates: Partial<TextOverlay>) => {
-      setState((prev) => ({
-        ...prev,
-        textOverlays: prev.textOverlays.map((t) =>
-          t.id === id ? { ...t, ...updates } : t,
-        ),
-      }));
+      setState((prev) => {
+        const next = {
+          ...prev,
+          textOverlays: prev.textOverlays.map((t) =>
+            t.id === id ? { ...t, ...updates } : t,
+          ),
+        };
+        saveSnapshot(next);
+        return next;
+      });
     },
-    [],
+    [saveSnapshot],
   );
 
-  const removeTextOverlay = useCallback((id: string) => {
-    setState((prev) => ({
-      ...prev,
-      textOverlays: prev.textOverlays.filter((t) => t.id !== id),
-    }));
-  }, []);
+  const removeTextOverlay = useCallback(
+    (id: string) => {
+      setState((prev) => {
+        const next = {
+          ...prev,
+          textOverlays: prev.textOverlays.filter((t) => t.id !== id),
+        };
+        saveSnapshot(next);
+        return next;
+      });
+    },
+    [saveSnapshot],
+  );
 
-  const addStickerOverlay = useCallback((emoji: string) => {
-    const sticker: StickerOverlay = {
-      id: generateId(),
-      emoji,
-      x: 50,
-      y: 50,
-      size: 48,
-      animation: "none",
-    };
-    setState((prev) => ({
-      ...prev,
-      stickerOverlays: [...prev.stickerOverlays, sticker],
-    }));
-  }, []);
+  const addStickerOverlay = useCallback(
+    (emoji: string) => {
+      const sticker: StickerOverlay = {
+        id: generateId(),
+        emoji,
+        x: 50,
+        y: 50,
+        size: 48,
+        animation: "none",
+      };
+      setState((prev) => {
+        const next = {
+          ...prev,
+          stickerOverlays: [...prev.stickerOverlays, sticker],
+        };
+        saveSnapshot(next);
+        return next;
+      });
+    },
+    [saveSnapshot],
+  );
 
   const updateStickerOverlay = useCallback(
     (id: string, updates: Partial<StickerOverlay>) => {
-      setState((prev) => ({
-        ...prev,
-        stickerOverlays: prev.stickerOverlays.map((s) =>
-          s.id === id ? { ...s, ...updates } : s,
-        ),
-      }));
+      setState((prev) => {
+        const next = {
+          ...prev,
+          stickerOverlays: prev.stickerOverlays.map((s) =>
+            s.id === id ? { ...s, ...updates } : s,
+          ),
+        };
+        saveSnapshot(next);
+        return next;
+      });
     },
-    [],
+    [saveSnapshot],
   );
 
-  const removeStickerOverlay = useCallback((id: string) => {
-    setState((prev) => ({
-      ...prev,
-      stickerOverlays: prev.stickerOverlays.filter((s) => s.id !== id),
-    }));
-  }, []);
+  const removeStickerOverlay = useCallback(
+    (id: string) => {
+      setState((prev) => {
+        const next = {
+          ...prev,
+          stickerOverlays: prev.stickerOverlays.filter((s) => s.id !== id),
+        };
+        saveSnapshot(next);
+        return next;
+      });
+    },
+    [saveSnapshot],
+  );
 
   const setAudioTrack = useCallback(async (file: File) => {
     setState((prev) => {
@@ -415,13 +757,23 @@ export function useVideoEditor() {
     selectedClip,
     videoRef,
     audioRef,
+    canUndo,
+    canRedo,
+    undo,
+    redo,
     addClips,
     selectClip,
     removeClip,
+    advanceToNextClip,
     updateClipFilters,
+    updateClipCrop,
     updateClipMuted,
     updateClipSpeed,
     updateClipVolume,
+    updateClipTransition,
+    updateClipKenBurns,
+    splitClip,
+    trimClip,
     addTextOverlay,
     updateTextOverlay,
     removeTextOverlay,

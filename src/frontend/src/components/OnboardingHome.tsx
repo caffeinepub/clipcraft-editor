@@ -37,11 +37,19 @@ export function OnboardingHome({ onCreateVideo }: OnboardingHomeProps) {
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1, duration: 0.45, ease: "easeOut" }}
       >
-        {/* Logo mark */}
+        {/* Logo mark with pulsing glow */}
         <div className="relative">
-          <div className="w-20 h-20 rounded-3xl bg-primary/20 border border-primary/30 flex items-center justify-center shadow-amber">
+          <motion.div
+            className="w-20 h-20 rounded-3xl bg-primary/20 border border-primary/30 flex items-center justify-center shadow-amber"
+            animate={{ scale: [1, 1.05, 1] }}
+            transition={{
+              duration: 2.4,
+              repeat: Number.POSITIVE_INFINITY,
+              ease: "easeInOut",
+            }}
+          >
             <Film className="w-10 h-10 text-primary" />
-          </div>
+          </motion.div>
           <motion.div
             className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-primary flex items-center justify-center"
             initial={{ scale: 0 }}
@@ -54,7 +62,7 @@ export function OnboardingHome({ onCreateVideo }: OnboardingHomeProps) {
 
         <div className="text-center">
           <h1 className="font-display text-4xl font-bold tracking-tight text-foreground">
-            ClipCraft
+            VibeEdit
           </h1>
           <p className="mt-2 text-muted-foreground text-sm leading-relaxed">
             Professional video editing
@@ -87,7 +95,6 @@ export function OnboardingHome({ onCreateVideo }: OnboardingHomeProps) {
         transition={{ delay: 0.25, duration: 0.5, ease: "easeOut" }}
       >
         <div className="relative w-52 h-36">
-          {/* Stacked video frame cards */}
           <div
             className="absolute left-8 top-4 w-36 h-24 rounded-xl bg-card border border-white/10 shadow-lg"
             style={{ transform: "rotate(-6deg)" }}
@@ -97,13 +104,11 @@ export function OnboardingHome({ onCreateVideo }: OnboardingHomeProps) {
             style={{ transform: "rotate(-2deg)" }}
           />
           <div className="absolute left-3 top-0 w-36 h-24 rounded-xl bg-card border border-primary/25 overflow-hidden">
-            {/* Mini timeline */}
             <div className="absolute bottom-0 left-0 right-0 h-7 bg-background/80 flex items-center px-2 gap-1.5">
               <div className="h-4 w-10 rounded bg-primary/60 flex-shrink-0" />
               <div className="h-4 w-14 rounded bg-primary/40 flex-shrink-0" />
               <div className="h-4 w-8 rounded bg-primary/50 flex-shrink-0" />
             </div>
-            {/* Play button */}
             <div className="absolute inset-0 flex items-center justify-center pb-7">
               <div className="w-8 h-8 rounded-full bg-primary/25 border border-primary/50 flex items-center justify-center">
                 <div className="w-0 h-0 border-t-[6px] border-b-[6px] border-l-[10px] border-transparent border-l-primary ml-0.5" />

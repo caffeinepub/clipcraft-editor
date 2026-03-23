@@ -2,12 +2,47 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
-import type { VideoEditorHook } from "@/hooks/useVideoEditor";
+import type { TextOverlay, VideoEditorHook } from "@/hooks/useVideoEditor";
 import { Plus, Trash2, Type } from "lucide-react";
 
 interface Props {
   editor: VideoEditorHook;
 }
+
+function StyleToggle({
+  active,
+  onClick,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={[
+        "px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all active:scale-95 select-none",
+        active
+          ? "bg-primary text-primary-foreground shadow-sm"
+          : "bg-white/10 text-muted-foreground hover:bg-white/15",
+      ].join(" ")}
+    >
+      {label}
+    </button>
+  );
+}
+
+const ANIMATIONS: { value: TextOverlay["animation"]; label: string }[] = [
+  { value: "none", label: "None" },
+  { value: "fadeIn", label: "Fade In" },
+  { value: "slideUp", label: "Slide Up" },
+  { value: "slideDown", label: "Slide Down" },
+  { value: "bounce", label: "Bounce" },
+  { value: "zoomIn", label: "Zoom In" },
+  { value: "typewriter", label: "Typewriter" },
+];
 
 export function TextEditor({ editor }: Props) {
   const { state, addTextOverlay, updateTextOverlay, removeTextOverlay } =
@@ -98,6 +133,84 @@ export function TextEditor({ editor }: Props) {
                   }
                   className="w-full h-8 rounded-md border border-white/10 bg-transparent cursor-pointer"
                 />
+              </div>
+            </div>
+
+            {/* Style toggles: Bold, Italic, Shadow, BG, Outline */}
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Style</Label>
+              <div className="flex flex-wrap gap-1.5">
+                <StyleToggle
+                  active={overlay.fontWeight === "bold"}
+                  onClick={() =>
+                    updateTextOverlay(overlay.id, {
+                      fontWeight:
+                        overlay.fontWeight === "bold" ? "normal" : "bold",
+                    })
+                  }
+                  label="B"
+                />
+                <StyleToggle
+                  active={overlay.fontStyle === "italic"}
+                  onClick={() =>
+                    updateTextOverlay(overlay.id, {
+                      fontStyle:
+                        overlay.fontStyle === "italic" ? "normal" : "italic",
+                    })
+                  }
+                  label="I"
+                />
+                <StyleToggle
+                  active={overlay.shadow}
+                  onClick={() =>
+                    updateTextOverlay(overlay.id, { shadow: !overlay.shadow })
+                  }
+                  label="Shadow"
+                />
+                <StyleToggle
+                  active={overlay.background}
+                  onClick={() =>
+                    updateTextOverlay(overlay.id, {
+                      background: !overlay.background,
+                    })
+                  }
+                  label="BG"
+                />
+                <StyleToggle
+                  active={overlay.outline}
+                  onClick={() =>
+                    updateTextOverlay(overlay.id, { outline: !overlay.outline })
+                  }
+                  label="Outline"
+                />
+              </div>
+            </div>
+
+            {/* Animation picker */}
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Animation</Label>
+              <div
+                className="flex gap-1.5 overflow-x-auto pb-1"
+                style={{ scrollbarWidth: "none" }}
+              >
+                {ANIMATIONS.map(({ value, label }) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() =>
+                      updateTextOverlay(overlay.id, { animation: value })
+                    }
+                    className={[
+                      "flex-shrink-0 px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all active:scale-95 whitespace-nowrap",
+                      overlay.animation === value
+                        ? "bg-primary text-primary-foreground shadow-sm"
+                        : "bg-white/10 text-muted-foreground hover:bg-white/15",
+                    ].join(" ")}
+                    data-ocid={`text.animation.${index + 1}`}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
             </div>
 

@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
-import type { VideoEditorHook } from "@/hooks/useVideoEditor";
+import type { TextOverlay, VideoEditorHook } from "@/hooks/useVideoEditor";
 import { Pause, Play, SkipBack, Volume2, VolumeX } from "lucide-react";
 import { useEffect, useRef } from "react";
 
@@ -9,7 +9,7 @@ interface Props {
   mobile?: boolean;
 }
 
-const animationMap: Record<string, string> = {
+const stickerAnimationMap: Record<string, string> = {
   bounce: "sticker-bounce 0.8s ease-in-out infinite",
   pulse: "sticker-pulse 1s ease-in-out infinite",
   spin: "sticker-spin 2s linear infinite",
@@ -17,6 +17,163 @@ const animationMap: Record<string, string> = {
   float: "sticker-float 2s ease-in-out infinite",
   none: "none",
 };
+
+const textAnimationMap: Record<TextOverlay["animation"], string> = {
+  none: "none",
+  fadeIn: "text-fadeIn 1s ease forwards",
+  slideUp: "text-slideUp 0.8s ease forwards",
+  slideDown: "text-slideDown 0.8s ease forwards",
+  bounce: "text-bounce 1s infinite",
+  zoomIn: "text-zoomIn 0.6s ease forwards",
+  typewriter: "text-typewriter 2s steps(20, end) forwards",
+};
+
+function buildFilterStyle(clip: VideoEditorHook["selectedClip"]): string {
+  if (!clip) return "";
+  const { filters } = clip;
+  const parts = [
+    `brightness(${filters.brightness}%)`,
+    `contrast(${filters.contrast}%)`,
+    `saturate(${filters.saturation}%)`,
+    `blur(${filters.blur}px)`,
+    `hue-rotate(${filters.hue}deg)`,
+  ];
+  if (filters.temperature !== 0) {
+    parts.push(`sepia(${Math.abs(filters.temperature) * 0.3}%)`);
+    parts.push(`saturate(${100 + filters.temperature}%)`);
+  }
+  if (filters.highlights !== 0) {
+    parts.push(`brightness(${100 + filters.highlights * 0.3}%)`);
+  }
+  return parts.join(" ");
+}
+
+function buildCropStyle(
+  clip: VideoEditorHook["selectedClip"],
+): React.CSSProperties {
+  if (!clip) return {};
+  const { crop } = clip;
+  if (
+    crop.top === 0 &&
+    crop.left === 0 &&
+    crop.right === 0 &&
+    crop.bottom === 0
+  )
+    return {};
+  return {
+    clipPath: `inset(${crop.top}% ${crop.right}% ${crop.bottom}% ${crop.left}%)`,
+  };
+}
+
+function buildTextStyle(t: TextOverlay): React.CSSProperties {
+  const style: React.CSSProperties = {
+    left: `${t.x}%`,
+    top: `${t.y}%`,
+    transform: "translate(-50%, -50%)",
+    fontSize: `${t.fontSize}px`,
+    color: t.color,
+    fontFamily: "'Bricolage Grotesque', sans-serif",
+    fontWeight: t.fontWeight,
+    fontStyle: t.fontStyle,
+    whiteSpace: "nowrap",
+    animation: textAnimationMap[t.animation] ?? "none",
+  };
+
+  if (t.animation === "typewriter") {
+    style.overflow = "hidden";
+    style.display = "inline-block";
+    style.maxWidth = "90%";
+    style.whiteSpace = "nowrap";
+  }
+
+  if (t.shadow) {
+    style.textShadow = "2px 2px 4px rgba(0,0,0,0.8), 0 0 8px rgba(0,0,0,0.5)";
+  }
+
+  if (t.background) {
+    style.backgroundColor = "rgba(0,0,0,0.55)";
+    style.padding = "2px 8px";
+    style.borderRadius = "4px";
+  }
+
+  if (t.outline) {
+    // @ts-ignore webkit property
+    (style as any).WebkitTextStroke =
+      `1px ${t.color === "#ffffff" ? "#000000" : "#ffffff"}`;
+  }
+
+  return style;
+}
+
+function getKenBurnsStyle(
+  kenBurns: string | undefined,
+  duration: number,
+): React.CSSProperties {
+  if (!kenBurns || kenBurns === "none") return {};
+  const animDuration = `${duration}s`;
+  const animMap: Record<string, string> = {
+    zoomIn: `kb-zoomIn ${animDuration} ease-in-out forwards`,
+    zoomOut: `kb-zoomOut ${animDuration} ease-in-out forwards`,
+    panLeft: `kb-panLeft ${animDuration} linear forwards`,
+    panRight: `kb-panRight ${animDuration} linear forwards`,
+  };
+  return { animation: animMap[kenBurns] ?? "none" };
+}
+
+function ClipMedia({
+  selectedClip,
+  videoRef,
+  filterStyle,
+  cropStyle,
+  onTimeUpdate,
+  onEnded,
+  isPlaying,
+}: {
+  selectedClip: NonNullable<VideoEditorHook["selectedClip"]>;
+  videoRef: React.RefObject<HTMLVideoElement | null>;
+  filterStyle: string;
+  cropStyle: React.CSSProperties;
+  onTimeUpdate: () => void;
+  onEnded: () => void;
+  isPlaying: boolean;
+}) {
+  const kenBurnsStyle =
+    selectedClip.type === "image"
+      ? getKenBurnsStyle(selectedClip.kenBurns, selectedClip.duration)
+      : {};
+
+  if (selectedClip.type === "image") {
+    return (
+      <div className="w-full h-full overflow-hidden relative">
+        <img
+          src={selectedClip.url}
+          alt={selectedClip.name}
+          key={`${selectedClip.id}-${isPlaying}`}
+          className="w-full h-full object-cover"
+          style={{
+            filter: filterStyle,
+            ...cropStyle,
+            ...(isPlaying ? kenBurnsStyle : {}),
+            transformOrigin: "center center",
+          }}
+        />
+      </div>
+    );
+  }
+
+  return (
+    // biome-ignore lint/a11y/useMediaCaption: user-uploaded content
+    <video
+      ref={videoRef}
+      src={selectedClip.url}
+      className="w-full h-full object-contain"
+      style={{ filter: filterStyle, ...cropStyle }}
+      onTimeUpdate={onTimeUpdate}
+      onEnded={onEnded}
+      playsInline
+    />
+  );
+}
 
 export function VideoPreview({ editor, mobile = false }: Props) {
   const {
@@ -27,14 +184,51 @@ export function VideoPreview({ editor, mobile = false }: Props) {
     setIsPlaying,
     setCurrentTime,
     updateClipMuted,
+    advanceToNextClip,
   } = editor;
   const progressRef = useRef<number>(0);
+  const imageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const imageIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const filterStyle = selectedClip
-    ? `brightness(${selectedClip.filters.brightness}%) contrast(${selectedClip.filters.contrast}%) saturate(${selectedClip.filters.saturation}%) blur(${selectedClip.filters.blur}px)`
-    : undefined;
+  const filterStyle = buildFilterStyle(selectedClip);
+  const cropStyle = buildCropStyle(selectedClip);
+
+  function clearImageTimer() {
+    if (imageTimerRef.current) {
+      clearTimeout(imageTimerRef.current);
+      imageTimerRef.current = null;
+    }
+    if (imageIntervalRef.current) {
+      clearInterval(imageIntervalRef.current);
+      imageIntervalRef.current = null;
+    }
+  }
 
   function togglePlay() {
+    if (selectedClip?.type === "image") {
+      if (state.isPlaying) {
+        audioRef.current?.pause();
+        clearImageTimer();
+      } else {
+        audioRef.current?.play();
+        // Start image timer for auto-advance
+        const remaining = (selectedClip.duration - state.currentTime) * 1000;
+        const startTime = Date.now();
+        const startCurrentTime = state.currentTime;
+        imageIntervalRef.current = setInterval(() => {
+          const elapsed = (Date.now() - startTime) / 1000;
+          setCurrentTime(
+            Math.min(startCurrentTime + elapsed, selectedClip.duration),
+          );
+        }, 100);
+        imageTimerRef.current = setTimeout(() => {
+          clearImageTimer();
+          advanceToNextClip();
+        }, remaining);
+      }
+      setIsPlaying(!state.isPlaying);
+      return;
+    }
     const video = videoRef.current;
     if (!video) return;
     if (state.isPlaying) {
@@ -48,8 +242,11 @@ export function VideoPreview({ editor, mobile = false }: Props) {
   }
 
   function handleRestart() {
+    clearImageTimer();
     if (videoRef.current) videoRef.current.currentTime = 0;
     if (audioRef.current) audioRef.current.currentTime = 0;
+    setCurrentTime(0);
+    setIsPlaying(false);
   }
 
   function handleTimeUpdate() {
@@ -60,25 +257,45 @@ export function VideoPreview({ editor, mobile = false }: Props) {
   }
 
   function handleEnded() {
-    setIsPlaying(false);
-    audioRef.current?.pause();
+    // Auto-advance to next clip
+    advanceToNextClip();
   }
 
   const clipId = selectedClip?.id ?? null;
   // biome-ignore lint/correctness/useExhaustiveDependencies: clipId is the intentional trigger
   useEffect(() => {
     const video = videoRef.current;
-    if (!video) return;
-    video.pause();
-    setIsPlaying(false);
-    setCurrentTime(0);
-  }, [clipId, videoRef, setIsPlaying, setCurrentTime]);
+    clearImageTimer();
+
+    if (selectedClip?.type === "image" && state.isPlaying) {
+      // Resume timer for new image clip
+      const duration = selectedClip.duration * 1000;
+      const startTime = Date.now();
+      imageIntervalRef.current = setInterval(() => {
+        const elapsed = (Date.now() - startTime) / 1000;
+        setCurrentTime(Math.min(elapsed, selectedClip.duration));
+      }, 100);
+      imageTimerRef.current = setTimeout(() => {
+        clearImageTimer();
+        advanceToNextClip();
+      }, duration);
+    } else if (selectedClip?.type === "video" && state.isPlaying && video) {
+      video.currentTime = 0;
+      video.play().catch(() => {});
+    } else {
+      if (video) video.pause();
+      setCurrentTime(0);
+      if (!state.isPlaying) setIsPlaying(false);
+    }
+
+    return () => clearImageTimer();
+  }, [clipId]);
 
   // Apply speed and volume to video element when clip or values change
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !selectedClip) return;
+    if (!video || !selectedClip || selectedClip.type === "image") return;
     video.playbackRate = selectedClip.speed;
     video.volume = selectedClip.volume / 100;
     video.muted = selectedClip.muted;
@@ -89,7 +306,8 @@ export function VideoPreview({ editor, mobile = false }: Props) {
 
   function handleSeek(val: number[]) {
     const newTime = (val[0] / 100) * duration;
-    if (videoRef.current) videoRef.current.currentTime = newTime;
+    if (videoRef.current && selectedClip?.type !== "image")
+      videoRef.current.currentTime = newTime;
     setCurrentTime(newTime);
   }
 
@@ -99,58 +317,71 @@ export function VideoPreview({ editor, mobile = false }: Props) {
     return `${m}:${sec.toString().padStart(2, "0")}`;
   }
 
+  const overlays = (
+    <>
+      {state.textOverlays.map((t) => (
+        <div
+          key={t.id}
+          className="absolute pointer-events-none select-none"
+          style={buildTextStyle(t)}
+        >
+          {t.text}
+        </div>
+      ))}
+      {state.stickerOverlays.map((s) => (
+        <div
+          key={s.id}
+          className="absolute pointer-events-none select-none"
+          style={{
+            left: `${s.x}%`,
+            top: `${s.y}%`,
+            transform: "translate(-50%, -50%)",
+            fontSize: `${s.size}px`,
+            lineHeight: 1,
+            animation: stickerAnimationMap[s.animation] ?? "none",
+          }}
+        >
+          {s.emoji}
+        </div>
+      ))}
+    </>
+  );
+
+  const keyframes = `
+    @keyframes text-fadeIn { from { opacity: 0 } to { opacity: 1 } }
+    @keyframes text-slideUp { from { opacity: 0; transform: translate(-50%, calc(-50% + 24px) ) } to { opacity: 1; transform: translate(-50%, -50%) } }
+    @keyframes text-slideDown { from { opacity: 0; transform: translate(-50%, calc(-50% - 24px) ) } to { opacity: 1; transform: translate(-50%, -50%) } }
+    @keyframes text-bounce {
+      0%, 100% { transform: translate(-50%, -50%) }
+      50% { transform: translate(-50%, calc(-50% - 10px)) }
+    }
+    @keyframes text-zoomIn { from { opacity: 0; transform: translate(-50%, -50%) scale(0.4) } to { opacity: 1; transform: translate(-50%, -50%) scale(1) } }
+    @keyframes text-typewriter { from { max-width: 0 } to { max-width: 90% } }
+    @keyframes kb-zoomIn { from { transform: scale(1); } to { transform: scale(1.25); } }
+    @keyframes kb-zoomOut { from { transform: scale(1.25); } to { transform: scale(1); } }
+    @keyframes kb-panLeft { from { transform: scale(1.15) translateX(8%); } to { transform: scale(1.15) translateX(-8%); } }
+    @keyframes kb-panRight { from { transform: scale(1.15) translateX(-8%); } to { transform: scale(1.15) translateX(8%); } }
+  `;
+
   if (mobile) {
     return (
       <div className="relative w-full h-full bg-black overflow-hidden">
-        {/* Video area */}
+        <style>{keyframes}</style>
+
+        {/* Video/Image area */}
         <div className="absolute inset-0 flex items-center justify-center bg-zinc-950">
           {selectedClip ? (
             <>
-              {/* biome-ignore lint/a11y/useMediaCaption: user-uploaded content */}
-              <video
-                ref={videoRef}
-                src={selectedClip.url}
-                className="w-full h-full object-contain"
-                style={{ filter: filterStyle }}
+              <ClipMedia
+                selectedClip={selectedClip}
+                videoRef={videoRef}
+                filterStyle={filterStyle}
+                cropStyle={cropStyle}
                 onTimeUpdate={handleTimeUpdate}
                 onEnded={handleEnded}
-                playsInline
+                isPlaying={state.isPlaying}
               />
-              {state.textOverlays.map((t) => (
-                <div
-                  key={t.id}
-                  className="absolute pointer-events-none select-none"
-                  style={{
-                    left: `${t.x}%`,
-                    top: `${t.y}%`,
-                    transform: "translate(-50%, -50%)",
-                    fontSize: `${t.fontSize}px`,
-                    color: t.color,
-                    textShadow: "0 2px 8px rgba(0,0,0,0.8)",
-                    fontFamily: "'Bricolage Grotesque', sans-serif",
-                    fontWeight: 700,
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {t.text}
-                </div>
-              ))}
-              {state.stickerOverlays.map((s) => (
-                <div
-                  key={s.id}
-                  className="absolute pointer-events-none select-none"
-                  style={{
-                    left: `${s.x}%`,
-                    top: `${s.y}%`,
-                    transform: "translate(-50%, -50%)",
-                    fontSize: `${s.size}px`,
-                    lineHeight: 1,
-                    animation: animationMap[s.animation] ?? "none",
-                  }}
-                >
-                  {s.emoji}
-                </div>
-              ))}
+              {overlays}
             </>
           ) : (
             <div className="flex flex-col items-center gap-3 text-muted-foreground">
@@ -239,54 +470,20 @@ export function VideoPreview({ editor, mobile = false }: Props) {
   // Desktop fallback
   return (
     <div className="flex flex-col h-full bg-black rounded-xl overflow-hidden border border-white/10">
+      <style>{keyframes}</style>
       <div className="relative flex-1 flex items-center justify-center bg-zinc-950 min-h-0">
         {selectedClip ? (
           <>
-            {/* biome-ignore lint/a11y/useMediaCaption: user-uploaded content */}
-            <video
-              ref={videoRef}
-              src={selectedClip.url}
-              className="max-h-full max-w-full object-contain"
-              style={{ filter: filterStyle }}
+            <ClipMedia
+              selectedClip={selectedClip}
+              videoRef={videoRef}
+              filterStyle={filterStyle}
+              cropStyle={cropStyle}
               onTimeUpdate={handleTimeUpdate}
               onEnded={handleEnded}
-              playsInline
+              isPlaying={state.isPlaying}
             />
-            {state.textOverlays.map((t) => (
-              <div
-                key={t.id}
-                className="absolute pointer-events-none select-none"
-                style={{
-                  left: `${t.x}%`,
-                  top: `${t.y}%`,
-                  transform: "translate(-50%, -50%)",
-                  fontSize: `${t.fontSize}px`,
-                  color: t.color,
-                  textShadow: "0 2px 8px rgba(0,0,0,0.8)",
-                  fontFamily: "'Bricolage Grotesque', sans-serif",
-                  fontWeight: 700,
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {t.text}
-              </div>
-            ))}
-            {state.stickerOverlays.map((s) => (
-              <div
-                key={s.id}
-                className="absolute pointer-events-none select-none"
-                style={{
-                  left: `${s.x}%`,
-                  top: `${s.y}%`,
-                  transform: "translate(-50%, -50%)",
-                  fontSize: `${s.size}px`,
-                  lineHeight: 1,
-                  animation: animationMap[s.animation] ?? "none",
-                }}
-              >
-                {s.emoji}
-              </div>
-            ))}
+            {overlays}
           </>
         ) : (
           <div className="flex flex-col items-center gap-3 text-muted-foreground">
